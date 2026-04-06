@@ -1,0 +1,15 @@
+node_modules
+dist
+.next
+.env
+.env.local
+*.log
+.DS_Store
+coverage
+generated
+apps/api/generated
+apps/web/.next
+apps/pos/.dart_tool
+apps/pos/build
+**/*.apk
+**/*.jks

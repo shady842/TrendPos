@@ -1,0 +1,354 @@
+// TrendPos — multi-tenant core (company → concepts → branches → POS / orders)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum PlanTier {
+  trial
+  starter
+  professional
+  premium
+}
+
+model Company {
+  id               String          @id @default(uuid())
+  name             String
+  slug             String          @unique
+  planTier         PlanTier        @default(trial)
+  trialEndsAt      DateTime?
+  /// Stripe Customer id (billing / checkout webhook)
+  stripeCustomerId String?         @unique
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  branches         Branch[]
+  concepts         Concept[]
+  memberships      UserCompany[]
+  menuCategories   MenuCategory[]
+  menuItems        MenuItem[]
+  orders           Order[]
+  modifierGroups   ModifierGroup[]
+  customers        Customer[]
+  auditLogs        AuditLog[]
+  approvalRequests ApprovalRequest[]
+  stockItems       StockItem[]
+}
+
+/// Brand / format under one company (e.g. "Fast casual" vs "Fine dining")
+model Concept {
+  id        String   @id @default(uuid())
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name      String
+  code      String
+  branches  Branch[]
+
+  @@unique([companyId, code])
+  @@index([companyId])
+}
+
+model Branch {
+  id               String            @id @default(uuid())
+  companyId        String
+  company          Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  conceptId        String?
+  concept          Concept?          @relation(fields: [conceptId], references: [id], onDelete: SetNull)
+  name             String
+  code             String
+  timezone         String            @default("UTC")
+  isActive         Boolean           @default(true)
+  createdAt        DateTime          @default(now())
+  terminals        PosTerminal[]
+  orders           Order[]
+  diningTables     DiningTable[]
+  kitchenStations  KitchenStation[]
+  stockLocations   StockLocation[]
+  approvalRequests ApprovalRequest[]
+
+  @@unique([companyId, code])
+  @@index([companyId])
+}
+
+model User {
+  id            String          @id @default(uuid())
+  email         String          @unique
+  passwordHash  String
+  fullName      String?
+  createdAt     DateTime        @default(now())
+  memberships   UserCompany[]
+  refreshTokens RefreshToken[]
+}
+
+model UserCompany {
+  id              String  @id @default(uuid())
+  userId          String
+  user            User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  companyId       String
+  company         Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  role            String  @default("staff")
+  defaultBranchId String?
+
+  @@unique([userId, companyId])
+  @@index([companyId])
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model PosTerminal {
+  id         String    @id @default(uuid())
+  branchId   String
+  branch     Branch    @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  name       String
+  deviceId   String?
+  lastSeenAt DateTime?
+
+  @@index([branchId])
+}
+
+model MenuCategory {
+  id        String     @id @default(uuid())
+  companyId String
+  company   Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name      String
+  sortOrder Int        @default(0)
+  items     MenuItem[]
+
+  @@index([companyId])
+}
+
+model MenuItem {
+  id             String         @id @default(uuid())
+  companyId      String
+  company        Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  categoryId     String?
+  category       MenuCategory?  @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  sku            String?
+  name           String
+  basePriceCents Int            @default(0)
+  isActive       Boolean        @default(true)
+  modifierLinks  MenuItemModifierGroup[]
+
+  @@index([companyId])
+}
+
+/// Modifier groups (e.g. "Size", "Toppings") — attach to menu items
+model ModifierGroup {
+  id          String                  @id @default(uuid())
+  companyId   String
+  company     Company                 @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name        String
+  minSelect   Int                     @default(0)
+  maxSelect   Int                     @default(1)
+  sortOrder   Int                     @default(0)
+  modifiers   Modifier[]
+  itemLinks   MenuItemModifierGroup[]
+
+  @@index([companyId])
+}
+
+model Modifier {
+  id               String        @id @default(uuid())
+  modifierGroupId  String
+  modifierGroup    ModifierGroup @relation(fields: [modifierGroupId], references: [id], onDelete: Cascade)
+  name             String
+  priceAdjustCents Int           @default(0)
+  sortOrder        Int           @default(0)
+
+  @@index([modifierGroupId])
+}
+
+model MenuItemModifierGroup {
+  menuItemId       String
+  menuItem         MenuItem       @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  modifierGroupId  String
+  modifierGroup    ModifierGroup  @relation(fields: [modifierGroupId], references: [id], onDelete: Cascade)
+
+  @@id([menuItemId, modifierGroupId])
+}
+
+/// Floor plan — branch-scoped tables for dine-in POS / KDS routing
+model DiningTable {
+  id          String   @id @default(uuid())
+  branchId    String
+  branch      Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  label       String
+  seats       Int      @default(4)
+  shape       String   @default("square")
+  posX        Float    @default(0)
+  posY        Float    @default(0)
+  width       Float    @default(80)
+  height      Float    @default(80)
+  status      String   @default("empty")
+  sortOrder   Int      @default(0)
+  orders      Order[]
+
+  @@index([branchId])
+}
+
+model KitchenStation {
+  id       String @id @default(uuid())
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  code     String
+  name     String
+  sortOrder Int   @default(0)
+
+  @@unique([branchId, code])
+  @@index([branchId])
+}
+
+model Order {
+  id              String       @id @default(uuid())
+  companyId       String
+  company         Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  branchId        String
+  branch          Branch       @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  terminalId      String?
+  diningTableId   String?
+  diningTable     DiningTable? @relation(fields: [diningTableId], references: [id], onDelete: SetNull)
+  channel         String       @default("dine_in")
+  status          String       @default("open")
+  subtotalCents   Int          @default(0)
+  totalCents      Int          @default(0)
+  /// Idempotency / offline sync key from POS client
+  clientOrderId   String?
+  clientUpdatedAt DateTime?
+  sentToKitchenAt DateTime?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  lines           OrderLine[]
+  payments        Payment[]
+
+  @@unique([companyId, clientOrderId])
+  @@index([companyId, branchId])
+  @@index([branchId, status])
+}
+
+model OrderLine {
+  id             String @id @default(uuid())
+  orderId        String
+  order          Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItemId     String?
+  name           String
+  quantity       Int
+  unitPriceCents Int
+  lineTotalCents Int
+  /// KDS routing: grill, bar, cold, etc.
+  station        String @default("kitchen")
+  kitchenStatus  String @default("pending")
+  note           String?
+
+  @@index([orderId])
+}
+
+model Payment {
+  id          String   @id @default(uuid())
+  orderId     String
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  method      String
+  amountCents Int
+  reference   String?
+  createdAt   DateTime @default(now())
+
+  @@index([orderId])
+}
+
+/// Manager app: void / refund / discount / transfer approvals
+model ApprovalRequest {
+  id                String    @id @default(uuid())
+  companyId         String
+  company           Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  branchId          String?
+  branch            Branch?   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  type              String
+  status            String    @default("pending")
+  payload           Json
+  requestedByUserId String
+  resolvedByUserId  String?
+  resolutionNote    String?
+  createdAt         DateTime  @default(now())
+  resolvedAt        DateTime?
+
+  @@index([companyId, status])
+  @@index([branchId])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  companyId  String
+  company    Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  userId     String?
+  action     String
+  entityType String
+  entityId   String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([companyId, createdAt])
+}
+
+model Customer {
+  id        String   @id @default(uuid())
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  email     String?
+  phone     String?
+  name      String?
+  createdAt DateTime @default(now())
+
+  @@index([companyId])
+}
+
+model StockItem {
+  id        String   @id @default(uuid())
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  sku       String?
+  name      String
+  unit      String   @default("ea")
+  ledger    StockLedger[]
+
+  @@index([companyId])
+}
+
+model StockLocation {
+  id        String        @id @default(uuid())
+  branchId  String
+  branch    Branch        @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  name      String
+  code      String
+  ledger    StockLedger[]
+
+  @@unique([branchId, code])
+  @@index([branchId])
+}
+
+model StockLedger {
+  id          String         @id @default(uuid())
+  stockItemId String
+  stockItem   StockItem      @relation(fields: [stockItemId], references: [id], onDelete: Cascade)
+  locationId  String
+  location    StockLocation  @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  qtyChange   Float
+  reason      String
+  refType     String?
+  refId       String?
+  createdAt   DateTime       @default(now())
+
+  @@index([stockItemId])
+  @@index([locationId])
+}

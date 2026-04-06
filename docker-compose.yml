@@ -1,0 +1,28 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: trendpos
+      POSTGRES_PASSWORD: trendpos
+      POSTGRES_DB: trendpos
+    volumes:
+      - trendpos_pg:/var/lib/postgresql/data
+
+  # Optional — API MVP does not require Redis. Start with:
+  #   docker compose --profile with-redis up -d
+  redis:
+    image: redis:7-alpine
+    profiles:
+      - with-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - trendpos_redis:/data
+
+volumes:
+  trendpos_pg:
+  trendpos_redis:
