@@ -21,10 +21,10 @@ jobs:
         working-directory: apps/pos
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
@@ -41,7 +41,7 @@ jobs:
         run: flutter build apk --debug
 
       - name: Upload POS APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: pos-app-debug
           path: apps/pos/build/app/outputs/flutter-apk/app-debug.apk
@@ -54,10 +54,10 @@ jobs:
         working-directory: apps/manager
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
@@ -74,7 +74,7 @@ jobs:
         run: flutter build apk --debug
 
       - name: Upload Manager APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: manager-app-debug
           path: apps/manager/build/app/outputs/flutter-apk/app-debug.apk
